@@ -17,6 +17,12 @@ inputs:
   rules:
     description: Path, in the calling repository, of its determinator rules file.
     required: true
+  locked:
+    description: >
+      `true` resolves the head revision's package graph with
+      `cargo metadata --locked`.
+    required: false
+    default: "false"
   version:
     description: >
       Release of this repository whose prebuilt binary is installed
@@ -35,6 +41,11 @@ outputs:
   workspace:
     description: "`true` when every package is in scope."
     value: ${{ steps.run.outputs.workspace }}
+  report:
+    description: >
+      The tool's whole JSON report, for callers that need its other fields
+      (`merge_base`, `affected`, `members`, `owners`).
+    value: ${{ steps.run.outputs.report }}
 
 runs:
   using: composite
@@ -108,6 +119,7 @@ runs:
       env:
         BASE: ${{ inputs.base }}
         RULES: ${{ inputs.rules }}
+        LOCKED: ${{ inputs.locked }}
         DIR: ${{ steps.resolve.outputs.dir }}
       run: |
         set -euo pipefail
@@ -115,5 +127,11 @@ runs:
         if [ -n "${BASE}" ]; then
           args+=(--base "${BASE}")
         fi
+        case "${LOCKED}" in
+          true) args+=(--locked) ;;
+          false) ;;
+          *) echo "::error::locked must be true or false, got '${LOCKED}'"; exit 1 ;;
+        esac
         report="$("${DIR}/affected-crates" "${args[@]}")"
         jq -r '"packages=\(.packages)", "package-args=\(.package_args)", "workspace=\(.workspace)"' <<<"${report}" >> "${GITHUB_OUTPUT}"
+        echo "report=${report}" >> "${GITHUB_OUTPUT}"
