@@ -1,0 +1,119 @@
+name: Affected crates
+description: >
+  Selects the workspace packages a diff affects: the changed packages plus
+  every reverse dependency, `workspace` when a path no rule names changes,
+  and nothing for prose-only changes. The repository must be checked out
+  with enough history to reach the base revision (`fetch-depth: 0`) and
+  have a Rust toolchain with cargo on the PATH.
+
+inputs:
+  base:
+    description: >
+      Revision the diff is measured from, through its merge-base with HEAD
+      (`origin/<base branch>` for a pull request, the push's `before` sha).
+      Empty selects the whole workspace.
+    required: false
+    default: ""
+  rules:
+    description: Path, in the calling repository, of its determinator rules file.
+    required: true
+  version:
+    description: >
+      Release of this repository whose prebuilt binary is installed
+      (`v<version>`). Defaults to the ref the action was referenced at,
+      which must then be a version tag.
+    required: false
+    default: ${{ github.action_ref }}
+
+outputs:
+  packages:
+    description: Space-separated package names, `workspace`, or empty.
+    value: ${{ steps.run.outputs.packages }}
+  package-args:
+    description: The affected packages rendered as cargo `-p` flags; empty for `workspace`.
+    value: ${{ steps.run.outputs.package-args }}
+  workspace:
+    description: "`true` when every package is in scope."
+    value: ${{ steps.run.outputs.workspace }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve the binary
+      id: resolve
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        case "${VERSION}" in
+          v[0-9]*) ;;
+          *) echo "::error::version must be a release tag like v0.1.0, got '${VERSION}'"; exit 1 ;;
+        esac
+        case "${RUNNER_OS}-${RUNNER_ARCH}" in
+          Linux-X64) target=x86_64-unknown-linux-gnu; ext=tar.gz ;;
+          Linux-ARM64) target=aarch64-unknown-linux-gnu; ext=tar.gz ;;
+          macOS-ARM64) target=aarch64-apple-darwin; ext=tar.gz ;;
+          Windows-X64) target=x86_64-pc-windows-msvc; ext=zip ;;
+          *) echo "::error::no prebuilt binary for ${RUNNER_OS} ${RUNNER_ARCH}"; exit 1 ;;
+        esac
+        {
+          echo "version=${VERSION}"
+          echo "archive=affected-crates-${target}.${ext}"
+          echo "dir=${RUNNER_TEMP}/affected-crates-${VERSION}-${target}"
+        } >> "${GITHUB_OUTPUT}"
+
+    - name: Restore the binary
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.resolve.outputs.dir }}
+        key: affected-crates-${{ steps.resolve.outputs.version }}-${{ steps.resolve.outputs.archive }}
+
+    - name: Install the binary
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        VERSION: ${{ steps.resolve.outputs.version }}
+        ARCHIVE: ${{ steps.resolve.outputs.archive }}
+        DIR: ${{ steps.resolve.outputs.dir }}
+      run: |
+        set -euo pipefail
+        url="https://github.com/lexoliu/affected-crates/releases/download/${VERSION}"
+        work="$(mktemp -d)"
+        curl --fail --silent --show-error --location --output "${work}/${ARCHIVE}" "${url}/${ARCHIVE}"
+        curl --fail --silent --show-error --location --output "${work}/${ARCHIVE}.sha256" "${url}/${ARCHIVE}.sha256"
+        expected="$(cut -d ' ' -f 1 "${work}/${ARCHIVE}.sha256")"
+        if command -v sha256sum >/dev/null; then
+          actual="$(sha256sum "${work}/${ARCHIVE}" | cut -d ' ' -f 1)"
+        else
+          actual="$(shasum -a 256 "${work}/${ARCHIVE}" | cut -d ' ' -f 1)"
+        fi
+        if [ "${expected}" != "${actual}" ]; then
+          echo "::error::sha256 mismatch for ${ARCHIVE}: expected ${expected}, got ${actual}"
+          exit 1
+        fi
+        mkdir -p "${DIR}"
+        case "${ARCHIVE}" in
+          *.zip) unzip -q "${work}/${ARCHIVE}" -d "${work}/extract" ;;
+          *) mkdir "${work}/extract"; tar -xzf "${work}/${ARCHIVE}" -C "${work}/extract" ;;
+        esac
+        binary="$(find "${work}/extract" -type f \( -name affected-crates -o -name affected-crates.exe \) | head -n 1)"
+        test -n "${binary}"
+        cp "${binary}" "${DIR}/"
+        rm -rf "${work}"
+
+    - name: Select affected packages
+      id: run
+      shell: bash
+      env:
+        BASE: ${{ inputs.base }}
+        RULES: ${{ inputs.rules }}
+        DIR: ${{ steps.resolve.outputs.dir }}
+      run: |
+        set -euo pipefail
+        args=(--rules "${RULES}")
+        if [ -n "${BASE}" ]; then
+          args+=(--base "${BASE}")
+        fi
+        report="$("${DIR}/affected-crates" "${args[@]}")"
+        jq -r '"packages=\(.packages)", "package-args=\(.package_args)", "workspace=\(.workspace)"' <<<"${report}" >> "${GITHUB_OUTPUT}"
