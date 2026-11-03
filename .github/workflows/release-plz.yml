@@ -1,0 +1,47 @@
+name: release-plz
+
+# Opens the release PR and, once it merges, tags `v<version>`. A tag pushed
+# with GITHUB_TOKEN triggers no workflow, so this job dispatches release.yml
+# (cargo-dist) for the tag it created; dispatches are exempt from that rule.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  release-plz:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-plz
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: release-plz/action@v0.5
+        id: release
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build the release binaries
+        if: steps.release.outputs.releases_created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASES: ${{ steps.release.outputs.releases }}
+        run: |
+          set -euo pipefail
+          for tag in $(jq -r '.[].tag' <<<"${RELEASES}"); do
+            gh workflow run release.yml -R "${GITHUB_REPOSITORY}" --ref "${tag}" -f tag="${tag}"
+          done
+      - uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,31 @@
+[package]
+name = "affected-crates"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0 OR MIT"
+description = "Selects the workspace packages a git diff affects, via the determinator crate and the caller's rules file"
+repository = "https://github.com/lexoliu/affected-crates"
+
+[dependencies]
+anyhow = { version = "1.0.104", default-features = false, features = ["std"] }
+camino = { version = "1.2.6", default-features = false }
+clap = { version = "4.6.7", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }
+determinator = { version = "0.13.0", default-features = false }
+guppy = { version = "0.19.1", default-features = false }
+serde = { version = "1.0.229", default-features = false, features = ["derive"] }
+serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
+tempfile = { version = "3.27.0", default-features = false }
+tracing = { version = "0.1.44", default-features = false, features = ["std"] }
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["std", "fmt", "env-filter", "ansi"] }
+
+# Standalone: keeps the tool out of any enclosing workspace.
+[workspace]
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
+[package.metadata.dist]
+dist = true
