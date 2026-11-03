@@ -2,5 +2,7 @@
 # Versions and tags only: the binaries and the GitHub Release come from the
 # cargo-dist workflow that the `v<version>` tag triggers.
 publish = false
+# Never on crates.io, so the latest version comes from the `v<version>` tags.
+git_only = true
 git_release_enable = false
 git_tag_name = "v{{ version }}"
