@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.1](https://github.com/lexoliu/affected-crates/compare/v0.0.0...v0.0.1) - 2026-11-03
+
+### Added
+
+- *(action)* expose the whole report and a locked input
+
+### Other
+
+- release v0.0.0
+
 ## [0.0.0](https://github.com/lexoliu/affected-crates/releases/tag/v0.0.0) - 2026-11-03
 
 ### Added
